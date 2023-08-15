@@ -113,6 +113,7 @@ for t in [logprobs, probs, counts, counts_sum, counts_sum_inv,
   t.retain_grad()
 loss.backward() 
 
+#===============Manual Backprop=======================
 dlogprobs = torch.zeros_like(logprobs)
 dlogprobs[range(n), Yb] = -1.0/n
 dprobs = (1/probs) * dlogprobs
@@ -125,6 +126,7 @@ dcounts += torch.ones_like(counts) * dcounts_sum
 dnorm_logits = norm_logits.exp() * dcounts
 dlogits = dnorm_logits.clone()
 dlogit_maxes = -dnorm_logits.sum(1, keepdims=True)
+#===============Manual Backprop=======================
 
 #compare manual gradients to torch grads
 cmp('logprobs', dlogprobs, logprobs)
