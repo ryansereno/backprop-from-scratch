@@ -117,8 +117,6 @@ loss.backward()
 dlogprobs = torch.zeros_like(logprobs)
 dlogprobs[range(n), Yb] = -1.0/n
 dprobs = (1/probs) * dlogprobs
-
-#because counts_sum_inv is broadcast when mult. with counts, that array needs to be collapsed column-wise, and those gradients added together
 dcounts_sum_inv = (counts * dprobs).sum(1, keepdims=True) 
 dcounts = counts_sum_inv * dprobs
 dcounts_sum = -counts_sum**-2 * dcounts_sum_inv
@@ -126,6 +124,19 @@ dcounts += torch.ones_like(counts) * dcounts_sum
 dnorm_logits = norm_logits.exp() * dcounts
 dlogits = dnorm_logits.clone()
 dlogit_maxes = -dnorm_logits.sum(1, keepdims=True)
+dlogits += torch.zeros_like(logits).scatter_(1, logits.argmax(1, keepdims=True), 1) * dlogit_maxes
+dh = dlogits @ W2.T 
+dW2 = h.T @ dlogits
+db2 = dlogits.sum(0, keepdims=True) 
+dhpreact = (1 - h**2) * dh
+dbnraw = bndiff * dhpreact 
+dbnvar_inv = (bndiff * dbnraw).sum(0, keepdims=True)
+dbnvar = -0.5*(bnvar + 1e-5)**-1.5 * dbnvar_inv
+dbndiff2 = (torch.ones_like(bndiff2) * 1/(n-1)) * dbnvar
+dbndiff = bnraw * dhpreact
+dbndiff += bnvar_inv * dbnraw
+dbndiff += 2*bndiff * dbndiff2
+dbnmeani = -dbndiff.sum(0, keepdims=True)
 #===============Manual Backprop=======================
 
 #compare manual gradients to torch grads
@@ -136,3 +147,14 @@ cmp('counts_sum', dcounts_sum, counts_sum)
 cmp('counts', dcounts, counts)
 cmp('norm_logits', dnorm_logits, norm_logits)
 cmp('logit_maxes', dlogit_maxes, logit_maxes)
+cmp('logits', dlogits, logits)
+cmp('h', dh, h)
+cmp('W2', dW2, W2)
+cmp('b2', db2, b2)
+cmp('hpreact', dhpreact, hpreact)
+cmp('bnraw', dbnraw, bnraw)
+cmp('bnvar_inv', dbnvar_inv, bnvar_inv)
+cmp('bnvar', dbnvar, bnvar)
+cmp('bndiff2', dbndiff2, bndiff2)
+cmp('bndiff', dbndiff, bndiff)
+cmp('bnmeani', dbnmeani, bnmeani)
