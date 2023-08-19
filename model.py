@@ -116,10 +116,10 @@ loss.backward()
 #===============Manual Backprop=======================
 dlogprobs = torch.zeros_like(logprobs)
 dlogprobs[range(n), Yb] = -1.0/n
-dprobs = (1/probs) * dlogprobs
+dprobs = (1.0/probs) * dlogprobs
 dcounts_sum_inv = (counts * dprobs).sum(1, keepdims=True) 
 dcounts = counts_sum_inv * dprobs
-dcounts_sum = -counts_sum**-2 * dcounts_sum_inv
+dcounts_sum = -counts_sum**-2.0 * dcounts_sum_inv
 dcounts += torch.ones_like(counts) * dcounts_sum
 dnorm_logits = norm_logits.exp() * dcounts
 dlogits = dnorm_logits.clone()
@@ -128,15 +128,27 @@ dlogits += torch.zeros_like(logits).scatter_(1, logits.argmax(1, keepdims=True),
 dh = dlogits @ W2.T 
 dW2 = h.T @ dlogits
 db2 = dlogits.sum(0, keepdims=True) 
-dhpreact = (1 - h**2) * dh
-dbnraw = bndiff * dhpreact 
+dhpreact = (1.0 - h**2) * dh
+dbngain = (bnraw * dhpreact).sum(0, keepdim=True)
+dbnraw = bngain * dhpreact 
+dbnbias = dhpreact.sum(0, keepdims=True)
+dbndiff = bnvar_inv * dbnraw
 dbnvar_inv = (bndiff * dbnraw).sum(0, keepdims=True)
 dbnvar = -0.5*(bnvar + 1e-5)**-1.5 * dbnvar_inv
 dbndiff2 = (torch.ones_like(bndiff2) * 1/(n-1)) * dbnvar
-dbndiff = bnraw * dhpreact
-dbndiff += bnvar_inv * dbnraw
-dbndiff += 2*bndiff * dbndiff2
+dbndiff += 2.0*bndiff * dbndiff2
+dhprebn = dbndiff.clone()
 dbnmeani = -dbndiff.sum(0, keepdims=True)
+dhprebn += 1.0/n * (torch.ones_like(hprebn) * dbnmeani) 
+dembcat = dhprebn @ W1.T 
+dW1 = embcat.T @ dhprebn
+db1 = dhprebn.sum(0, keepdims=False)
+demb = dembcat.view(emb.shape)
+dC = torch.zeros_like(C)
+for k in range(Xb.shape[0]):
+  for j in range(Xb.shape[1]):
+    ix = Xb[k,j]
+    dC[ix] += demb[k,j]
 #===============Manual Backprop=======================
 
 #compare manual gradients to torch grads
@@ -152,9 +164,17 @@ cmp('h', dh, h)
 cmp('W2', dW2, W2)
 cmp('b2', db2, b2)
 cmp('hpreact', dhpreact, hpreact)
+cmp('bngain', dbngain, bngain)
+cmp('bnbias', dbnbias, bnbias)
 cmp('bnraw', dbnraw, bnraw)
 cmp('bnvar_inv', dbnvar_inv, bnvar_inv)
 cmp('bnvar', dbnvar, bnvar)
 cmp('bndiff2', dbndiff2, bndiff2)
 cmp('bndiff', dbndiff, bndiff)
 cmp('bnmeani', dbnmeani, bnmeani)
+cmp('hprebn', dhprebn, hprebn)
+cmp('embcat', dembcat, embcat)
+cmp('W1', dW1, W1)
+cmp('b1', db1, b1)
+cmp('emb', demb, emb)
+cmp('C', dC, C)
